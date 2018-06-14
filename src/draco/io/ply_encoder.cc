@@ -28,11 +28,11 @@ bool PlyEncoder::EncodeToFile(const PointCloud &pc,
   if (!file)
     return false;  // File couldn't be opened.
   // Encode the mesh into a buffer.
-  EncoderBuffer buffer;
-  if (!EncodeToBuffer(pc, &buffer))
-    return false;
-  // Write the buffer into the file.
-  file.write(buffer.data(), buffer.size());
+  //EncoderBuffer buffer;
+  //if (!EncodeToBuffer(pc, &buffer))
+  //  return false;
+  //// Write the buffer into the file.
+  //file.write(buffer.data(), buffer.size());
   return true;
 }
 

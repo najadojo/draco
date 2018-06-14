@@ -85,92 +85,104 @@ int main(int argc, char **argv) {
     return -1;
   }
 
-  // Create a draco decoding buffer. Note that no data is copied in this step.
-  draco::DecoderBuffer buffer;
-  buffer.Init(data.data(), data.size());
+  try {
 
-  draco::CycleTimer timer;
-  // Decode the input data into a geometry.
-  std::unique_ptr<draco::PointCloud> pc;
-  draco::Mesh *mesh = nullptr;
-  auto type_statusor = draco::Decoder::GetEncodedGeometryType(&buffer);
-  if (!type_statusor.ok()) {
-    return ReturnError(type_statusor.status());
-  }
-  const draco::EncodedGeometryType geom_type = type_statusor.value();
-  if (geom_type == draco::TRIANGULAR_MESH) {
-    timer.Start();
-    draco::Decoder decoder;
-    auto statusor = decoder.DecodeMeshFromBuffer(&buffer);
-    if (!statusor.ok()) {
-      return ReturnError(statusor.status());
-    }
-    std::unique_ptr<draco::Mesh> in_mesh = std::move(statusor).value();
-    timer.Stop();
-    if (in_mesh) {
-      mesh = in_mesh.get();
-      pc = std::move(in_mesh);
-    }
-  } else if (geom_type == draco::POINT_CLOUD) {
-    // Failed to decode it as mesh, so let's try to decode it as a point cloud.
-    timer.Start();
-    draco::Decoder decoder;
-    auto statusor = decoder.DecodePointCloudFromBuffer(&buffer);
-    if (!statusor.ok()) {
-      return ReturnError(statusor.status());
-    }
-    pc = std::move(statusor).value();
-    timer.Stop();
-  }
+      // Create a draco decoding buffer. Note that no data is copied in this step.
+      draco::DecoderBuffer buffer;
+      buffer.Init(data.data(), data.size());
 
-  if (pc == nullptr) {
-    printf("Failed to decode the input file.\n");
-    return -1;
-  }
+      draco::CycleTimer timer;
+      // Decode the input data into a geometry.
+      std::unique_ptr<draco::PointCloud> pc;
+      draco::Mesh *mesh = nullptr;
+      auto type_statusor = draco::Decoder::GetEncodedGeometryType(&buffer);
+      if (!type_statusor.ok()) {
+          return ReturnError(type_statusor.status());
+      }
+      const draco::EncodedGeometryType geom_type = type_statusor.value();
+      if (geom_type == draco::TRIANGULAR_MESH) {
+          timer.Start();
+          draco::Decoder decoder;
+          auto statusor = decoder.DecodeMeshFromBuffer(&buffer);
+          if (!statusor.ok()) {
+              return ReturnError(statusor.status());
+          }
+          std::unique_ptr<draco::Mesh> in_mesh = std::move(statusor).value();
+          timer.Stop();
+          if (in_mesh) {
+              mesh = in_mesh.get();
+              pc = std::move(in_mesh);
+          }
+      }
+      else if (geom_type == draco::POINT_CLOUD) {
+          // Failed to decode it as mesh, so let's try to decode it as a point cloud.
+          timer.Start();
+          draco::Decoder decoder;
+          auto statusor = decoder.DecodePointCloudFromBuffer(&buffer);
+          if (!statusor.ok()) {
+              return ReturnError(statusor.status());
+          }
+          pc = std::move(statusor).value();
+          timer.Stop();
+      }
 
-  if (options.output.empty()) {
-    // Save the output model into a ply file.
-    options.output = options.input + ".ply";
-  }
+      if (pc == nullptr) {
+          printf("Failed to decode the input file.\n");
+          return -1;
+      }
 
-  // Save the decoded geometry into a file.
-  // TODO(ostava): Currently only .ply and .obj are supported.
-  const std::string extension = draco::parser::ToLower(
-      options.output.size() >= 4
+      if (options.output.empty()) {
+          // Save the output model into a ply file.
+          options.output = options.input + ".ply";
+      }
+
+      // Save the decoded geometry into a file.
+      // TODO(ostava): Currently only .ply and .obj are supported.
+      const std::string extension = draco::parser::ToLower(
+          options.output.size() >= 4
           ? options.output.substr(options.output.size() - 4)
           : options.output);
 
-  if (extension == ".obj") {
-    draco::ObjEncoder obj_encoder;
-    if (mesh) {
-      if (!obj_encoder.EncodeToFile(*mesh, options.output)) {
-        printf("Failed to store the decoded mesh as OBJ.\n");
-        return -1;
+      if (extension == ".obj") {
+          draco::ObjEncoder obj_encoder;
+          if (mesh) {
+              if (!obj_encoder.EncodeToFile(*mesh, options.output)) {
+                  printf("Failed to store the decoded mesh as OBJ.\n");
+                  return -1;
+              }
+          }
+          else {
+              if (!obj_encoder.EncodeToFile(*pc.get(), options.output)) {
+                  printf("Failed to store the decoded point cloud as OBJ.\n");
+                  return -1;
+              }
+          }
       }
-    } else {
-      if (!obj_encoder.EncodeToFile(*pc.get(), options.output)) {
-        printf("Failed to store the decoded point cloud as OBJ.\n");
-        return -1;
+      else if (extension == ".ply") {
+          draco::PlyEncoder ply_encoder;
+          if (mesh) {
+              if (!ply_encoder.EncodeToFile(*mesh, options.output)) {
+                  printf("Failed to store the decoded mesh as PLY.\n");
+                  return -1;
+              }
+          }
+          else {
+              if (!ply_encoder.EncodeToFile(*pc.get(), options.output)) {
+                  printf("Failed to store the decoded point cloud as PLY.\n");
+                  return -1;
+              }
+          }
       }
-    }
-  } else if (extension == ".ply") {
-    draco::PlyEncoder ply_encoder;
-    if (mesh) {
-      if (!ply_encoder.EncodeToFile(*mesh, options.output)) {
-        printf("Failed to store the decoded mesh as PLY.\n");
-        return -1;
+      else {
+          printf("Invalid extension of the output file. Use either .ply or .obj\n");
+          return -1;
       }
-    } else {
-      if (!ply_encoder.EncodeToFile(*pc.get(), options.output)) {
-        printf("Failed to store the decoded point cloud as PLY.\n");
-        return -1;
-      }
-    }
-  } else {
-    printf("Invalid extension of the output file. Use either .ply or .obj\n");
-    return -1;
+      printf("Decoded geometry saved to %s (%" PRId64 " ms to decode)\n",
+          options.output.c_str(), timer.GetInMs());
   }
-  printf("Decoded geometry saved to %s (%" PRId64 " ms to decode)\n",
-         options.output.c_str(), timer.GetInMs());
+  catch (std::bad_alloc& ba) {
+      printf("bad_alloc caught\n");
+      return -1;
+  }
   return 0;
 }
